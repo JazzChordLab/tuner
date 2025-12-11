@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Sax-Tech – Tuner</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="css/stylts.css" />
+</head>
+<body>
+  <h1>Online Tuner</h1>
+  <div class="tuner-wrapper">
+    <div class="tuner-box">
+      <div class="tuner-title">Sax-Tech</div>
+      <div class="note-display" id="note">—</div>
+
+      <div class="bar-wrapper">
+        <div class="bar-center-line"></div>
+        <div class="bar-indicator" id="indicator"></div>
+      </div>
+      <div class="bar-labels">
+        <span>−50 ¢</span>
+        <span>0 ¢</span>
+        <span>+50 ¢</span>
+      </div>
+
+      <div class="key-switcher">
+        <button class="key-button" data-transpose="0">Instrument w C</button>
+        <button class="key-button" data-transpose="2">Instrument w B♭</button>
+        <button class="key-button" data-transpose="9">Instrument w E♭</button>
+      </div>
+
+      <div class="tuner-actions">
+        <button class="tuner-button" id="toggleButton">Start</button>
+      </div>
+      <div class="error" id="error"></div>
+    </div>
+  </div>
+  <script type="module">
+    import { PitchDetector } from "https://esm.sh/pitchy@4";
+
+    const A4 = 440;
+    const noteNames = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
+
+    const noteEl = document.getElementById("note");
+    const indicatorEl = document.getElementById("indicator");
+    const errorEl = document.getElementById("error");
+    const toggleButton = document.getElementById("toggleButton");
+    const keyButtons = Array.from(document.querySelectorAll(".key-button"));
+
+    let audioContext = null;
+    let analyser = null;
+    let detector = null;
+    let buffer = null;
+    let micStream = null;
+    let running = false;
+    let transpose = 0; // semitones: C=0, Bb=+2, Eb=+9
+
+    function frequencyToNoteNumber(freq) {
+      return 69 + 12 * Math.log2(freq / A4);
+    }
+
+    function noteNumberToName(num) {
+      const rounded = Math.round(num);
+      const name = noteNames[(rounded + 1200) % 12];
+      const octave = Math.floor(rounded / 12) - 1;
+      return name + octave;
+    }
+
+    function updateUI(pitch, clarity) {
+      if (!pitch || clarity < 0.8) {
+        noteEl.textContent = "—";
+        noteEl.classList.remove("note-hit", "note-miss");
+        indicatorEl.style.left = "50%";
+        return;
+      }
+
+      const noteNum = frequencyToNoteNumber(pitch);
+      const transposed = noteNum + transpose;
+      const fullName = noteNumberToName(transposed);
+      const nearest = Math.round(transposed);
+      const cents = Math.round((transposed - nearest) * 100);
+
+      noteEl.textContent = fullName;
+      noteEl.classList.remove("note-hit", "note-miss");
+      if (Math.abs(cents) <= 5) {
+        noteEl.classList.add("note-hit");
+      } else {
+        noteEl.classList.add("note-miss");
+      }
+
+      const maxCents = 50;
+      let normalized = cents / maxCents;
+      if (normalized > 1) normalized = 1;
+      if (normalized < -1) normalized = -1;
+      const percent = 50 + normalized * 50;
+      indicatorEl.style.left = percent + "%";
+    }
+
+    async function startTuner() {
+      errorEl.textContent = "";
+      try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const source = audioContext.createMediaStreamSource(micStream);
+
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 2048;
+        const inputLength = analyser.fftSize;
+        buffer = new Float32Array(inputLength);
+
+        detector = PitchDetector.forFloat32Array(inputLength);
+
+        source.connect(analyser);
+        running = true;
+        toggleButton.textContent = "Stop";
+        toggleButton.classList.add("stop");
+
+        const loop = () => {
+          if (!running) return;
+          analyser.getFloatTimeDomainData(buffer);
+          const [pitch, clarity] = detector.findPitch(buffer, audioContext.sampleRate);
+          updateUI(pitch, clarity);
+          requestAnimationFrame(loop);
+        };
+        loop();
+      } catch (err) {
+        console.error(err);
+        errorEl.textContent = "Błąd mikrofonu: " + (err.message || err);
+      }
+    }
+
+    function stopTuner() {
+      running = false;
+      if (audioContext) {
+        audioContext.close();
+        audioContext = null;
+      }
+      if (micStream) {
+        micStream.getTracks().forEach(track => track.stop());
+        micStream = null;
+      }
+      analyser = null;
+      detector = null;
+      buffer = null;
+      toggleButton.textContent = "Start";
+      toggleButton.classList.remove("stop");
+      noteEl.textContent = "—";
+      noteEl.classList.remove("note-hit", "note-miss");
+      indicatorEl.style.left = "50%";
+      errorEl.textContent = "";
+    }
+
+    function setInstrument(semitones, btn) {
+      if (running) {
+        errorEl.textContent = "Zatrzymaj tuner, aby zmienić strój instrumentu.";
+        return;
+      }
+      transpose = semitones;
+      keyButtons.forEach(b => b.classList.remove("active"));
+      if (btn) btn.classList.add("active");
+      errorEl.textContent = "";
+    }
+
+    keyButtons.forEach(btn => {
+      btn.addEventListener("click", () => {
+        const val = Number(btn.dataset.transpose || 0);
+        setInstrument(val, btn);
+      });
+    });
+    setInstrument(0, keyButtons[0]);
+
+    toggleButton.addEventListener("click", () => {
+      if (!running) {
+        startTuner();
+      } else {
+        stopTuner();
+      }
+    });
+  </script>
+</body>
+</html>
