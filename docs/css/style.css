@@ -113,6 +113,9 @@ h1 {
 }
 
 .key-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: rgba(255, 255, 255, 0.06);
   color: #e2e8f0;
@@ -122,6 +125,7 @@ h1 {
   cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease, transform 0.08s ease;
   width: min(242px, 100%);
+  min-height: 46px;
 }
 
 .key-button:hover { transform: translateY(-1px); }
