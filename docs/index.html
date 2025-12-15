@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+   <meta charset="utf-8" />
+   <title>Tuner</title>
+   <meta name="viewport" content="width=device-width, initial-scale=1" />
+   <meta name="google" content="notranslate" />
+   <link rel="stylesheet" href="css/style.css" />
+   <link rel="icon" type="image/svg+xml" href="icons/icon-512.svg" />
+   <link rel="manifest" href="manifest.webmanifest">
+   <meta name="theme-color" content="#0f172a">
+</head>
+
+<body>
+   <h1>TUNER</h1>
+   <div class="tuner-wrapper">
+      <div class="tuner-box">
+         <div class="tuner-title">
+            <a href="https://jazzchordlab.com">Jazz Chord Lab</a>
+         </div>
+         <div class="note-display" id="note">—</div>
+
+         <div class="bar-wrapper">
+            <div class="bar-center-line"></div>
+            <div class="bar-indicator" id="indicator"></div>
+         </div>
+         <div class="bar-labels">
+            <span>-50 ¢</span>
+            <span>0 ¢</span>
+            <span>+50 ¢</span>
+         </div>
+
+         <div class="key-switcher">
+            <button class="key-button" data-transpose="0">Instrument in C</button>
+            <button class="key-button" data-transpose="2">Instrument in B♭</button>
+            <button class="key-button" data-transpose="9">Instrument in E♭</button>
+         </div>
+
+         <div class="tuner-actions">
+            <button class="tuner-button" id="toggleButton">Start</button>
+         </div>
+         <div class="error" id="error"></div>
+      </div>
+   </div>
+   <script type="module">
+
+      import { PitchDetector } from "https://esm.sh/pitchy@4";
+      if ("serviceWorker" in navigator) {
+         navigator.serviceWorker.register("./sw.js");
+      }
+
+      const A4 = 440;
+      const noteNames = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
+
+      const noteEl = document.getElementById("note");
+      const indicatorEl = document.getElementById("indicator");
+      const errorEl = document.getElementById("error");
+      const toggleButton = document.getElementById("toggleButton");
+      const keyButtons = Array.from(document.querySelectorAll(".key-button"));
+
+      let audioContext = null;
+      let analyser = null;
+      let detector = null;
+      let buffer = null;
+      let micStream = null;
+      let running = false;
+      let transpose = 0; // semitones: C=0, Bb=+2, Eb=+9
+      let starting = false;
+
+      function frequencyToNoteNumber(freq) {
+         return 69 + 12 * Math.log2(freq / A4);
+      }
+
+      function noteNumberToName(num) {
+         const rounded = Math.round(num);
+         const name = noteNames[(rounded + 1200) % 12];
+         const octave = Math.floor(rounded / 12) - 1;
+         return name + octave;
+      }
+
+      function updateUI(pitch, clarity) {
+         if (!pitch || clarity < 0.8) {
+            noteEl.textContent = "—";
+            noteEl.classList.remove("note-hit", "note-miss");
+            indicatorEl.style.left = "50%";
+            return;
+         }
+
+         const noteNum = frequencyToNoteNumber(pitch);
+         const transposed = noteNum + transpose;
+         const fullName = noteNumberToName(transposed);
+         const nearest = Math.round(transposed);
+         const cents = Math.round((transposed - nearest) * 100);
+
+         noteEl.textContent = fullName;
+         noteEl.classList.remove("note-hit", "note-miss");
+         if (Math.abs(cents) <= 5) {
+            noteEl.classList.add("note-hit");
+         } else {
+            noteEl.classList.add("note-miss");
+         }
+
+         const maxCents = 50;
+         let normalized = cents / maxCents;
+         if (normalized > 1) normalized = 1;
+         if (normalized < -1) normalized = -1;
+         const percent = 50 + normalized * 50;
+         indicatorEl.style.left = percent + "%";
+      }
+
+      async function startTuner() {
+         if (starting) return;
+         starting = true;
+         toggleButton.disabled = true;
+         errorEl.textContent = "";
+         try {
+            if (!navigator.mediaDevices?.getUserMedia) {
+               throw new Error("Microphone access is not supported in this browser (HTTPS required).");
+            }
+
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            await audioContext.resume();
+
+            micStream = await navigator.mediaDevices.getUserMedia({
+               audio: {
+                  echoCancellation: false,
+                  noiseSuppression: false,
+                  autoGainControl: false,
+               },
+            });
+            const source = audioContext.createMediaStreamSource(micStream);
+
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 2048;
+            const inputLength = analyser.fftSize;
+            buffer = new Float32Array(inputLength);
+
+            detector = PitchDetector.forFloat32Array(inputLength);
+
+            source.connect(analyser);
+            running = true;
+            toggleButton.textContent = "Stop";
+            toggleButton.classList.add("stop");
+
+            const loop = () => {
+               if (!running) return;
+               analyser.getFloatTimeDomainData(buffer);
+               const [pitch, clarity] = detector.findPitch(buffer, audioContext.sampleRate);
+               updateUI(pitch, clarity);
+               requestAnimationFrame(loop);
+            };
+            loop();
+         } catch (err) {
+            console.error(err);
+            const message =
+               err && err.name === "NotAllowedError"
+                  ? "Microphone access denied. Please allow microphone access."
+                  : err && err.name === "NotFoundError"
+                     ? "No microphone detected on this device."
+                     : "Microphone error: " + (err.message || err);
+            errorEl.textContent = message;
+         } finally {
+            starting = false;
+            toggleButton.disabled = false;
+         }
+      }
+
+      function stopTuner() {
+         running = false;
+         if (audioContext) {
+            audioContext.close();
+            audioContext = null;
+         }
+         if (micStream) {
+            micStream.getTracks().forEach(track => track.stop());
+            micStream = null;
+         }
+         analyser = null;
+         detector = null;
+         buffer = null;
+         toggleButton.textContent = "Start";
+         toggleButton.classList.remove("stop");
+         noteEl.textContent = "—";
+         noteEl.classList.remove("note-hit", "note-miss");
+         indicatorEl.style.left = "50%";
+         errorEl.textContent = "";
+      }
+
+      function setInstrument(semitones, btn) {
+         if (running) {
+            errorEl.textContent = "Stop the tuner to change the instrument key.";
+            return;
+         }
+         transpose = semitones;
+         keyButtons.forEach(b => b.classList.remove("active"));
+         if (btn) btn.classList.add("active");
+         errorEl.textContent = "";
+      }
+
+      keyButtons.forEach(btn => {
+         btn.addEventListener("click", () => {
+            const val = Number(btn.dataset.transpose || 0);
+            setInstrument(val, btn);
+         });
+      });
+      setInstrument(0, keyButtons[0]);
+
+      toggleButton.addEventListener("click", () => {
+         if (!running) {
+            startTuner();
+         } else {
+            stopTuner();
+         }
+      });
+   </script>
+</body>
+
+</html>
