@@ -1,4 +1,4 @@
-const CACHE = "tuner-v3";
+const CACHE = "tuner-v4";
 const ASSETS = [
    "./",
    "./index.html",
@@ -24,6 +24,14 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
    const { request } = event;
+   const requestUrl = new URL(request.url);
+   const cacheableOrigins = new Set([self.location.origin, "https://esm.sh"]);
+
+   // Cache only app resources and the pitch-detection dependency. Other
+   // services, including the visit counter, must receive every request.
+   if (request.method !== "GET" || !cacheableOrigins.has(requestUrl.origin)) {
+      return;
+   }
 
    // Network-first for navigations to always pick latest HTML
    if (request.mode === "navigate") {
