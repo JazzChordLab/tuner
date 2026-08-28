@@ -1,8 +1,9 @@
-const CACHE = "tuner-v4";
+const CACHE = "tuner-v5";
 const ASSETS = [
    "./",
    "./index.html",
    "./css/style.css",
+   "./js/tuner-core.mjs",
    "./manifest.webmanifest",
    "./img/tuner-256x256.png",
    "./img/tuner-512x512.png",

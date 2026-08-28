@@ -5,5 +5,13 @@
 </p>
 
 <p align="justify">
-&nbsp;&nbsp;&nbsp;The tool is optimized for instruments in the keys of C, B♭, and E♭, automatically interpreting their transpositions to display accurate pitch information.
+&nbsp;&nbsp;&nbsp;The tool is optimized for instruments in the keys of C, B♭, E♭, and F, automatically interpreting their transpositions to display accurate pitch information.
 </p>
+
+## Tests
+
+Run the unit tests with:
+
+```sh
+node --test tests/tuner-core.test.mjs
+```

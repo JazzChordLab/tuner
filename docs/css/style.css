@@ -12,6 +12,7 @@
    --card: #f1f1f1;
    --text: #1f2933;
    --text-contrast: #e7e7e7;
+   --accent: #6d28d9;
    --shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
    --font-main: "JetBrains", "JetBrains Mono", "IBM Plex Mono", "Menlo", "Consolas", "Liberation Mono", monospace;
 }
@@ -233,6 +234,18 @@ h1 {
 .link:hover {
    background: rgba(176, 70, 194, 0.08);
    color: #7c3aed;
+}
+
+.sr-only {
+   position: absolute;
+   width: 1px;
+   height: 1px;
+   padding: 0;
+   margin: -1px;
+   overflow: hidden;
+   clip: rect(0, 0, 0, 0);
+   white-space: nowrap;
+   border: 0;
 }
 
 .visitor-counter {

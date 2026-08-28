@@ -5,7 +5,7 @@
    <meta charset="utf-8" />
    <title>Tuner</title>
    <meta name="viewport" content="width=device-width, initial-scale=1" />
-   <meta name="description" content="Saxophone Tuner Online – a simple and accurate tuner for practicing intonation on saxophone." />
+   <meta name="description" content="Online chromatic tuner for practicing intonation on instruments in C, B-flat, E-flat, and F." />
    <meta name="author" content="Rafał Jopek" />
    <meta name="google" content="notranslate" />
    <link rel="stylesheet" href="css/style.css" />
@@ -21,7 +21,8 @@
          <div class="tuner-title">
             <a href="https://jazzchordlab.com">Jazz Chord Lab</a>
          </div>
-         <div class="note-display" id="note">—</div>
+         <div class="note-display" id="note" aria-hidden="true">—</div>
+         <div class="sr-only" id="noteStatus" role="status" aria-live="polite" aria-atomic="true"></div>
 
          <div class="bar-wrapper">
             <div class="bar-center-line"></div>
@@ -37,12 +38,13 @@
             <button class="key-button" data-transpose="0">Instrument in C</button>
             <button class="key-button" data-transpose="2">Instrument in B♭</button>
             <button class="key-button" data-transpose="9">Instrument in E♭</button>
+            <button class="key-button" data-transpose="7">Instrument in F</button>
          </div>
 
          <div class="tuner-actions">
             <button class="tuner-button" id="toggleButton">Start</button>
          </div>
-         <div class="error" id="error"></div>
+         <div class="error" id="error" role="status" aria-live="polite" aria-atomic="true"></div>
       </div>
    </div>
       <div class="cta">
@@ -57,15 +59,14 @@
       </div>
    <script type="module">
 
-      import { PitchDetector } from "https://esm.sh/pitchy@4";
+      import { PitchDetector } from "https://esm.sh/pitchy@4.1.0";
+      import { frequencyToNoteNumber, noteNumberToName } from "./js/tuner-core.mjs";
       if ("serviceWorker" in navigator) {
          navigator.serviceWorker.register("./sw.js");
       }
 
-      const A4 = 440;
-      const noteNames = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
-
       const noteEl = document.getElementById("note");
+      const noteStatusEl = document.getElementById("noteStatus");
       const indicatorEl = document.getElementById("indicator");
       const errorEl = document.getElementById("error");
       const toggleButton = document.getElementById("toggleButton");
@@ -77,22 +78,31 @@
       let buffer = null;
       let micStream = null;
       let running = false;
-      let transpose = 0; // semitones: C=0, Bb=+2, Eb=+9
+      let transpose = 0; // semitones: C=0, Bb=+2, Eb=+9, F=+7
       let starting = false;
+      let pendingNoteAnnouncement = null;
+      let pendingNoteStatus = "";
+      let announcedNoteStatus = "";
 
-      function frequencyToNoteNumber(freq) {
-         return 69 + 12 * Math.log2(freq / A4);
-      }
+      function announceStableNote(noteName, cents) {
+         const tuning = Math.abs(cents) <= 5 ? "in tune" : cents < 0 ? "flat" : "sharp";
+         const status = `${noteName}, ${tuning}.`;
 
-      function noteNumberToName(num) {
-         const rounded = Math.round(num);
-         const name = noteNames[(rounded + 1200) % 12];
-         const octave = Math.floor(rounded / 12) - 1;
-         return name + octave;
+         if (status === announcedNoteStatus || status === pendingNoteStatus) return;
+
+         clearTimeout(pendingNoteAnnouncement);
+         pendingNoteStatus = status;
+         pendingNoteAnnouncement = setTimeout(() => {
+            noteStatusEl.textContent = status;
+            announcedNoteStatus = status;
+            pendingNoteStatus = "";
+         }, 600);
       }
 
       function updateUI(pitch, clarity) {
          if (!pitch || clarity < 0.8) {
+            clearTimeout(pendingNoteAnnouncement);
+            pendingNoteStatus = "";
             noteEl.textContent = "—";
             noteEl.classList.remove("note-hit", "note-miss");
             indicatorEl.style.left = "50%";
@@ -106,6 +116,7 @@
          const cents = Math.round((transposed - nearest) * 100);
 
          noteEl.textContent = fullName;
+         announceStableNote(fullName, cents);
          noteEl.classList.remove("note-hit", "note-miss");
          if (Math.abs(cents) <= 5) {
             noteEl.classList.add("note-hit");
@@ -152,6 +163,7 @@
 
             source.connect(analyser);
             running = true;
+            noteStatusEl.textContent = "Tuner started. Play a note.";
             toggleButton.textContent = "Stop";
             toggleButton.classList.add("stop");
 
@@ -197,6 +209,10 @@
          noteEl.classList.remove("note-hit", "note-miss");
          indicatorEl.style.left = "50%";
          errorEl.textContent = "";
+         clearTimeout(pendingNoteAnnouncement);
+         pendingNoteStatus = "";
+         announcedNoteStatus = "";
+         noteStatusEl.textContent = "Tuner stopped.";
       }
 
       function setInstrument(semitones, btn) {
